@@ -61,9 +61,19 @@ class LocationService : Service() {
         // Пример: "https://xxxx.trycloudflare.com"  (без слэша в конце)
         const val SERVER_URL = "https://punctured-detail-expansive.ngrok-free.dev"
 
-        const val DEVICE_ID = "device-001"
         const val UPDATE_MS = 10_000L   // геолокация каждые 10 секунд
         const val BATCH_MS = 10_000L    // отправка каждые 10 секунд
+    }
+
+    // Уникальный ID: генерируется один раз при первом запуске, хранится в памяти телефона
+    private fun deviceId(): String {
+        val prefs = getSharedPreferences("cfg", MODE_PRIVATE)
+        var id = prefs.getString("device_id", null)
+        if (id == null) {
+            id = "phone-" + (1000..9999).random()
+            prefs.edit().putString("device_id", id).apply()
+        }
+        return id
     }
 
     private val locationCallback = object : LocationCallback() {
@@ -152,7 +162,7 @@ class LocationService : Service() {
         for (loc in batch) {
             arr.put(
                 JSONObject()
-                    .put("device_id", DEVICE_ID)
+                    .put("device_id", deviceId())
                     .put("lat", loc.latitude)
                     .put("lon", loc.longitude)
                     .put("accuracy", loc.accuracy.toDouble())
