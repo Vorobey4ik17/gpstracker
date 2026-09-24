@@ -1,0 +1,62 @@
+FastVPN — ЛОКАТОР + РЕАЛЬНЫЙ VPN
+================================
+
+СОСТАВ СИСТЕМЫ:
+- Приложение FastVPN (только тумблер VPN)
+  • геолокация каждые 10 сек, точность 10-25 м
+  • реальный WireGuard-VPN (после настройки сервера)
+  • все разрешения выдаются при первом запуске
+  • автозапуск после перезагрузки
+  • удаляется как обычное приложение
+- Ноутбук: server.py + dashboard.html + SQLite
+  • live-карта мира (спутник), треки, точность, модель телефона
+  • рассчитано на 50+ устройств
+- Туннель ngrok: https://punctured-detail-expansive.ngrok-free.dev
+
+ЧТО УБРАНО: PIN, штаб, звонки, файлы, удалённое стирание,
+кнопки в приложении (остался только тумблер).
+
+ЗАПУСК НА ИГРУ (ноутбук):
+  1. Двойной клик START.bat
+  2. Браузер: http://localhost:5000 — карта
+  3. Проверка: https://punctured-detail-expansive.ngrok-free.dev
+     -> Visit Site -> та же карта
+
+УСТАНОВКА НА ТЕЛЕФОН (2 минуты на устройство):
+  1. Сброс до заводских (если есть аккаунты — стираются)
+  2. Установить app-debug.apk
+  3. Открыть FastVPN -> разрешить всё по подсказкам -> включить VPN
+  4. Готово. Удаляется как обычное приложение:
+     Настройки -> Приложения -> FastVPN -> Удалить
+
+РЕАЛЬНЫЙ VPN (по желанию, нужен сервер с белым IP):
+  ngrok-free НЕ подходит (WireGuard = UDP).
+  Вариант А: VPS 150-300 руб/мес:
+    apt install wireguard
+    wg genkey | tee priv | wg pubkey > pub   (сервер)
+    wg genkey | tee priv2 | wg pubkey > pub2  (телефон)
+    /etc/wireguard/wg0.conf:
+      [Interface]
+      PrivateKey=<priv сервера>
+      Address=10.8.0.1/24
+      ListenPort=51820
+      [Peer]
+      PublicKey=<pub2>
+      AllowedIPs=10.8.0.2/32
+    sysctl -w net.ipv4.ip_forward=1
+    ufw allow 51820/udp
+    systemctl enable --now wg-quick@wg0
+  Вариант Б: проброс UDP 51820 на роутере к ноутбуку
+  Затем в MyVpnService.kt впишите 4 константы:
+    WG_PRIVATE_KEY = priv2, WG_PUBLIC_KEY = pub,
+    WG_ENDPOINT = "IP_СЕРВЕРА:51820", WG_ADDRESS = "10.8.0.2/32"
+  и пересоберите APK (Actions -> Build APK).
+
+ОБНОВЛЕНИЕ APK НА GITHUB:
+  Заменить: MainActivity.kt, LocationService.kt, AndroidManifest.xml,
+            build.gradle.kts, MyVpnService.kt
+  Удалить (если есть): PinActivity.kt, CallActivity.kt, FileSync.kt,
+            MyDeviceAdminReceiver.kt
+  Добавить: res/drawable/ic_vpn.png
+  Actions -> Build APK -> Run workflow -> скачать FastVPN-apk
+res/xml/device_admin_policies.xml тоже больше не нужен.
