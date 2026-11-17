@@ -1,0 +1,10 @@
+# /etc/litestream.yml на ГЛАВНОМ сервере
+# непрерывно стримит базу на резервный сервер по SFTP
+dbs:
+  - path: /opt/gpstracker/gps.db
+    replicas:
+      - type: sftp
+        host: IP_ВТОРОГО_СЕРВЕРА
+        user: root
+        path: /opt/gpstracker-replica
+        # ключ: ssh-keygen, публичный ключ в authorized_keys второго сервера

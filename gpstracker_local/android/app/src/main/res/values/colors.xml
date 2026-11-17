@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#1565C0</color>
+    <color name="primary_dark">#0D47A1</color>
+    <color name="accent">#42A5F5</color>
+    <color name="green">#2E7D32</color>
+    <color name="gray">#9E9E9E</color>
+    <color name="white">#FFFFFF</color>
+    <color name="bg_gradient_start">#0D47A1</color>
+    <color name="bg_gradient_end">#1565C0</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+</resources>
