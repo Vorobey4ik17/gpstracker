@@ -10,15 +10,17 @@ class MyVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val builder = Builder()
         builder.setSession("FastVPN")
-        builder.addAddress(StringVault.wgAddress())
+
+        val wgAddr = StringVault.wgAddress()
+        val parts = wgAddr.split("/")
+        if (parts.size == 2) {
+            builder.addAddress(parts[0], parts[1].toInt())
+        }
+
         builder.addRoute("0.0.0.0", 0)
         builder.addDnsServer(StringVault.wgDns())
         builder.setMtu(1280)
         builder.setBlocking(false)
-        // Для реального WireGuard: раскомментируйте секцию ниже,
-        // добавьте в build.gradle.kts:
-        // implementation("com.wireguard.android:tunnel:1.0.20230426")
-        // и замените Builder на GoBackend (см. документацию WireGuard)
         tun = builder.establish()
         return START_STICKY
     }
